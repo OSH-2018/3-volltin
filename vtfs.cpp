@@ -30,6 +30,7 @@ struct Node
     NODETYPE_T node_type;
     NODEID_T node_id; // 0 for super node
     // NODEID_T next_id; // 0 for no next one
+    BLKID_T blk_id;
     BLKID_T content;  // first ContentNode id
     struct stat st;
     char name[FILENAME_LEN];
@@ -40,6 +41,10 @@ struct Node
     
     void set_node_id(const NODEID_T _node_id) {
         node_id = _node_id;
+    }
+
+    void set_blk_id(BLKID_T _blk_id) {
+        blk_id = _blk_id;
     }
     
     void set_content(BLKID_T _content) {
@@ -145,15 +150,15 @@ NODEID_T get_node_id()
 
 void create_super_node()
 {
-    BLKID_T idx = register_new_blk();
     Node super_node;
     memset(&super_node, 0, sizeof(Node));
-    super_node.node_id = get_node_id();
+    super_node.set_node_id(get_node_id());
+    super_node.set_blk_id(register_new_blk());
     super_node.set_node_type(NODE_DIR);
     super_node.set_name("/");
     super_node.set_content(register_new_blk());
     super_node.set_st(get_default_stat());
-    write_to_blk(idx, &super_node, sizeof(Node));
+    write_to_blk(super_node.blk_id, &super_node, sizeof(Node));
 }
 
 Node get_node_by_blk_id(BLKID_T blk_id)
@@ -171,16 +176,15 @@ ContentNode get_content_node_by_blk_id(BLKID_T blk_id)
 }
 
 BLKID_T get_blk_id_of_node(NODEID_T tar_nid, BLKID_T cur_blkid = 0) {
+    printf("[+] get_blk_id_of_node tar_nid: %lld cur_blkid: %lld\n", tar_nid, cur_blkid);
     Node cur_node = get_node_by_blk_id(cur_blkid);
-    // printf("[+] get_blk_id_of_node(%lld, %lld)\n", tar_nid, cur_blkid);
-    // cur_node.dumps();
+
     if (cur_node.node_id == tar_nid) {
-        return cur_blkid;
-    } else {
+        return cur_node.blk_id;
+    } else if (cur_node.node_type == NODE_DIR) { // search in dir
         ContentNode content = get_content_node_by_blk_id(cur_node.content);
         for (size_t i = 0; i < IDX_PER_PAGE - 1; i++)
         {
-            // printf("[-] id: %lld\n", content.ids[i]);
             if (content.ids[i] == 0) {
                 return -1;
             }
@@ -197,13 +201,13 @@ BLKID_T get_blk_id_of_node(NODEID_T tar_nid, BLKID_T cur_blkid = 0) {
     return -1;
 }
 
-NODETYPE_T get_node_type(NODEID_T nid)
-{
-    assert(nid >= 0);
-    BLKID_T blk_id = get_blk_id_of_node(nid);
-    Node node = get_node_by_blk_id(blk_id);
-    return node.node_type;
-}
+// NODETYPE_T get_node_type(NODEID_T nid)
+// {
+//     assert(nid >= 0);
+//     BLKID_T blk_id = get_blk_id_of_node(nid);
+//     Node node = get_node_by_blk_id(blk_id);
+//     return node.node_type;
+// }
 
 void append_id_to_content_node(BLKID_T to_append, BLKID_T blk_id)
 {
@@ -230,6 +234,10 @@ void append_id_to_content_node(BLKID_T to_append, BLKID_T blk_id)
 
 Node get_node_by_node_id(NODEID_T nid)
 {
+    if (nid == -1) {
+        printf("[E] get NotExistsNode!\n");
+        return NotExistsNode;
+    }
     return get_node_by_blk_id(get_blk_id_of_node(nid));
 }
 
@@ -239,7 +247,8 @@ NODEID_T create_node(NODETYPE_T node_type, const char* name, NODEID_T parent_nid
     NODEID_T nid = get_node_id();
     BLKID_T blk_id = register_new_blk();
     Node new_node;
-    new_node.node_id = nid;
+    new_node.set_node_id(nid);
+    new_node.set_blk_id(blk_id);
     new_node.set_node_type(node_type);
     new_node.set_name(name);
     new_node.set_content(register_new_blk());
@@ -269,6 +278,60 @@ Node get_node_by_name_from_content(const char* target, ContentNode content) {
     return NotExistsNode;
 }
 
+Node get_node_by_nid_from_content(NODEID_T target_nid, const ContentNode& content) {
+    printf("[+] get_node_by_nid_from_content(%lld, content)\n", target_nid);
+    for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+        if (content.ids[i] == 0) break;
+        Node subnode = get_node_by_blk_id(content.ids[i]);
+        printf("[t] subnode.name: %s\n", subnode.name);
+        if (subnode.node_id == target_nid)
+            return subnode;
+    }
+    if (content.ids[IDX_PER_PAGE - 1]) {
+        return get_node_by_nid_from_content(target_nid, get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]));
+    }
+    return NotExistsNode;
+}
+
+pair<size_t, BLKID_T> get_idx_by_blk_id_from_content(BLKID_T target_blk_id, BLKID_T content_blk) {
+    ContentNode content = get_content_node_by_blk_id(content_blk);
+    printf("[+] get_idx_by_blk_id_from_content(%lld, content)\n", target_blk_id);
+    for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+        if (content.ids[i] == 0) break;
+        if (content.ids[i] == target_blk_id)
+            return pair<size_t, BLKID_T>(i, content_blk);
+    }
+    if (content.ids[IDX_PER_PAGE - 1]) {
+        return get_idx_by_blk_id_from_content(target_blk_id, content.ids[IDX_PER_PAGE - 1]);
+    }
+    return pair<size_t, BLKID_T>(IDX_PER_PAGE, -1);
+}
+
+NODEID_T get_parent_nid(const Node& target_node, NODEID_T parent_nid = 0) {
+    Node parent_node = get_node_by_node_id(parent_nid);
+    if (parent_node.node_type != NODE_DIR) return -1;
+    BLKID_T content_blk = parent_node.content;
+    ContentNode content = get_content_node_by_blk_id(content_blk);
+    Node subnode = get_node_by_nid_from_content(target_node.node_id, content);
+    if (subnode.node_id != -1) {
+        return parent_node.node_id;
+    } else {
+        while(content_blk) {
+            ContentNode content = get_content_node_by_blk_id(content_blk);
+            for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+                BLKID_T node_blk = content.ids[i];
+                if (node_blk == 0) break;
+
+                Node node = get_node_by_blk_id(node_blk);
+                NODEID_T ret = get_parent_nid(target_node, node.node_id);
+                if (ret != -1) return ret;
+            }
+            content_blk = content.ids[IDX_PER_PAGE - 1];
+        }
+    }
+    return -1;
+}
+
 Node get_node_by_path(const char* path, NODEID_T parent_nid = 0) {
     printf("[+] get_node_by_path(\"%s\", %lld)\n", path, parent_nid);
     if (strlen(path) == 0) return get_node_by_node_id(parent_nid);
@@ -289,13 +352,13 @@ Node get_node_by_path(const char* path, NODEID_T parent_nid = 0) {
 }
 
 void create_node_by_path(const char* path, const struct stat* st, NODEID_T parent_nid = 0, NODETYPE_T node_type = NODE_FILE) {
-    printf("create_node_by_path path=%s parent=%lld", path, parent_nid);
+    printf("[+] create_node_by_path path=%s parent_node=%lld\n", path, parent_nid);
     char target[FILENAME_LEN];
     const char* pos = strchr(path, '/');
     if (pos == NULL) strcpy(target, path);
     else{
         memcpy(target, path, (pos - path));
-        target[(pos - path)] = '\0';
+        target[pos - path] = '\0';
     }
     Node parent_node = get_node_by_node_id(parent_nid);
     if (pos == NULL)
@@ -307,7 +370,6 @@ void create_node_by_path(const char* path, const struct stat* st, NODEID_T paren
 }
 
 void read_from_node(const Node& node, char* buf, off_t offset, size_t size) {
-    memset(buf, 'a', size);
     BLKID_T content_blk = node.content;
     
     // calculate start point
@@ -384,8 +446,8 @@ void write_to_node(const Node& node, const char* buf, off_t offset, size_t size)
     }
 }
 
-void realloc_node_size(const Node& node, size_t size) {
-    printf("realloc_node_size %lld\n", node.node_id);
+void realloc_node_size(Node node, size_t size) {
+    printf("[+] realloc_node_size node_id=%lld, size=%lu\n", node.node_id, size);
     size_t old_size = node.st.st_size;
     size_t new_size = size;
     
@@ -394,31 +456,62 @@ void realloc_node_size(const Node& node, size_t size) {
     if (new_size >= old_size) {
         // find last page
         BLKID_T content_blk = node.content;
-        for (size_t i = 0; i + 1 < old_content_blk_num; i++) {
+        for (size_t _ = 0; _ + 1 < old_content_blk_num; _++) {
             ContentNode content = get_content_node_by_blk_id(content_blk);
             content_blk = content.ids[IDX_PER_PAGE - 1];
         }
+        printf("[t] Last content blk: %lld\n", content_blk);
         size_t new_page_num = new_content_blk_num - old_content_blk_num;
-        for (size_t i = 0; i < new_page_num; i++) {
+        printf("[t] new_page_num: %lu\n", new_page_num);
+        
+        for (size_t _ = 0; _ < new_page_num; _++) {
             ContentNode content = get_content_node_by_blk_id(content_blk);
             content.ids[IDX_PER_PAGE-1] = register_new_blk();
-            // exit(0);
             write_to_blk(content_blk, &content, sizeof(ContentNode));
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
     } else {
         // TODO
+        printf("[E] realloc error!");
     }
-    Node new_node = node;
-    new_node.st.st_size = size;
-    write_to_blk(get_blk_id_of_node(new_node.node_id), &new_node, sizeof(Node));
+    node.st.st_size = size;
+    write_to_blk(node.blk_id, &node, sizeof(Node));
+}
+
+void shift_left_content(size_t idx, BLKID_T content_blk) {
+    ContentNode content = get_content_node_by_blk_id(content_blk);
+    for (size_t i = idx + 1; i < IDX_PER_PAGE - 1; i++) {
+        content.ids[i-1] = content.ids[i];
+    }
+    BLKID_T next_content_blk = content.ids[IDX_PER_PAGE - 1];
+    if (next_content_blk) {
+        ContentNode next_content = get_content_node_by_blk_id(next_content_blk);
+        content.ids[IDX_PER_PAGE - 2] = next_content.ids[0];
+        shift_left_content(0, next_content_blk);
+    }
+    write_to_blk(content_blk, &content, sizeof(ContentNode));
+}
+
+void remove_record_from_content(BLKID_T to_remove, BLKID_T content_blk) {
+    pair<size_t, BLKID_T> ret = get_idx_by_blk_id_from_content(to_remove, content_blk);
+    shift_left_content(ret.first, ret.second);
+}
+
+void remove_node(const Node& node) {
+    // release all space of the node
+    realloc_node_size(node, 0);
+    // delete record from parent
+    Node parent_node = get_node_by_node_id(get_parent_nid(node));
+    remove_record_from_content(node.blk_id, parent_node.content);
+    // free all the space
+    free_blk_id(node.content);
+    free_blk_id(node.blk_id);
 }
 
 /* fuse */
 
 static void *vtfs_init(struct fuse_conn_info *conn) {
     printf("[.] vtfs_init\n");
-    
     NotExistsNode.node_id = -1;
     create_super_node();
     return NULL;
@@ -478,7 +571,6 @@ static int vtfs_mkdir(const char *path, mode_t mode)
 {
     printf("[.] vtfs_mkdir\n");
     struct stat st = get_default_stat(true);
-    printf("prepare to mkdir\n");
     create_node_by_path(path + 1, &st, 0, NODE_DIR);
     return 0;
 }
@@ -523,6 +615,7 @@ static int vtfs_unlink(const char *path)
     Node node = get_node_by_path(path + 1);
     if (node.node_id == -1)
         return -ENOENT;
+    remove_node(node);
     return 0;
 }
 
@@ -550,7 +643,7 @@ void test()
     create_super_node();
     create_node(NODE_FILE, "aa");
     Node node = get_node_by_path("aa");
-    realloc_node_size(node, 2);
+    realloc_node_size(node, 73);
 }
 
 int main(int argc, char *argv[])
