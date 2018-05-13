@@ -703,17 +703,17 @@ static int vtfs_open(const char *path, struct fuse_file_info *fi)
 /* main */
 
 static const struct fuse_operations op = {
-        .init = vtfs_init,
-        .getattr = vtfs_getattr,
-        .readdir = vtfs_readdir,
-        .mknod = vtfs_mknod,
-        .open = vtfs_open,
-        .write = vtfs_write,
-        .truncate = vtfs_truncate,
-        .read = vtfs_read,
-        .unlink = vtfs_unlink,
-        .rmdir = vtfs_rmdir,
-        .mkdir = vtfs_mkdir
+        init : vtfs_init,
+        getattr : vtfs_getattr,
+        readdir : vtfs_readdir,
+        mknod : vtfs_mknod,
+        open : vtfs_open,
+        write : vtfs_write,
+        truncate : vtfs_truncate,
+        read : vtfs_read,
+        unlink : vtfs_unlink,
+        rmdir : vtfs_rmdir,
+        mkdir : vtfs_mkdir
 };
 
 int main(int argc, char *argv[])
