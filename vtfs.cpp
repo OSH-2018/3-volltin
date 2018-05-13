@@ -638,16 +638,7 @@ static const struct fuse_operations op = {
         .mkdir = vtfs_mkdir
 };
 
-void test()
-{
-    create_super_node();
-    create_node(NODE_FILE, "aa");
-    Node node = get_node_by_path("aa");
-    realloc_node_size(node, 73);
-}
-
 int main(int argc, char *argv[])
 {
-    //test();
     return fuse_main(argc, argv, &op, NULL);
 }
