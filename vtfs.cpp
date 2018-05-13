@@ -1,3 +1,7 @@
+/*
+ * source code of VTFS: volltin's filesystem.
+ * Basic file and directory operations on dynamically allocated memory.
+ */
 #include <cstdio>
 #include <vector>
 #include <string>
@@ -10,27 +14,65 @@
 #include <sys/mman.h>
 using namespace std;
 
+/*
+ * Types for block id and node id.
+ */
 typedef long long BLKID_T;
 typedef long long NODEID_T;
 
+/*
+ * PAGESIZE indicates the memeroy space that a page has.
+ */
 const size_t PAGESIZE = 4096;
+/*
+ * IDX_PER_PAGE indicates the number of block ids that can be store in a whole block.
+ * SPC_PER_PAGE indicates the memroy space of block ids in a whole block can use. 
+ */
 const size_t IDX_PER_PAGE = PAGESIZE / sizeof(BLKID_T);
 const size_t SPC_PER_PAGE = (IDX_PER_PAGE - 1) * (PAGESIZE);
+/*
+ * Everything is based on one (or more) block(s).
+ * A block is a mmap-ed page. 
+ */
 const size_t MAX_BLK_ID = 1048576;
+
+/*
+ * Node includes: FILE, DIR, ContentNode
+ */
 const size_t MAX_NODE_ID = 1048576;
 
+/*
+ * Max length of filename is 255.
+ */
 const size_t FILENAME_LEN = 256;
 
+/*
+ * Every node has a type, file or dir. Type may decide the behaviour of node.
+ */
 enum NODETYPE_T {
     NODE_FILE, NODE_DIR
 };
 
+/*
+ * Node is the most important object in the filesystem.
+ * A node may be a file, dir, content.
+ * attributes:
+ *   node_type: see NODETYPE_T;
+ *   node_id: a UNIQUE id of this node;
+ *   blk_id: the block id of this node, see also MAX_BLK_ID;
+ *   content: the block id of the node's content.
+ *            For a file, the content store the block ids of its data.
+ *            For a dir, the content store the block ids of its subnode.
+ *            (It's not good to call this as `content`, `content_blk_id` is much more better :-(.
+ *             But to refactor it, there's too many modifacitions that I can't make it before the ddl )
+ *   st: stat (from `sys/stat.h`) of this node.
+ *   name: the name of this node, the max length is FILENAME_LEN-1.
+ */
 struct Node
 {
     NODETYPE_T node_type;
     NODEID_T node_id; // 0 for super node
-    // NODEID_T next_id; // 0 for no next one
-    BLKID_T blk_id;
+    BLKID_T blk_id;   // blk id of this node
     BLKID_T content;  // first ContentNode id
     struct stat st;
     char name[FILENAME_LEN];
@@ -70,14 +112,28 @@ struct Node
         printf("++  - name: %s ++\n", name);
         printf("++  - content: %lld ++\n", content);
     }
-} NotExistsNode;
+} NotExistsNode; // NotExistsNode indicats a failure attempt to get a node
 
+/*
+ * ContentNode is different from Node, there's no meta data and there's full of blk_ids.
+ * For files:
+ *  The fisrt IDX_PER_PAGE-1 ids are "pointer" to real data blk. the last id is the next ContentNode.
+ * For dirs:
+ *  The fisrt IDX_PER_PAGE-1 ids are "pointer" to blk id of subnodes. the last id is the next ContentNode.
+ * See also Node::content
+ */
 struct ContentNode
 {
-    // last idx store the next ContentNode, 0 for no next one.
     BLKID_T ids[IDX_PER_PAGE];
 };
 
+
+/* helper functions */
+
+/*
+ * get_default_stat
+ * get a default `struct stat` for a file or dir.
+ */
 struct stat get_default_stat(bool dir = false) {
     struct stat st;
     memset(&st, 0, sizeof(struct stat));
@@ -90,17 +146,12 @@ struct stat get_default_stat(bool dir = false) {
     return st;
 }
 
-/* blk */
+/* block functions */
 void* blk_ids[MAX_BLK_ID];
-
-BLKID_T get_new_blk_id() { // cannot call by others
+BLKID_T get_new_blk_id() {
     for (BLKID_T i = 0; i < MAX_BLK_ID; i++)
         if (!blk_ids[i]) return i;
     return -1;
-}
-
-void free_blk_id(BLKID_T blk_id) {
-    munmap(blk_ids[blk_id], PAGESIZE);
 }
 
 BLKID_T register_new_blk() {
@@ -110,6 +161,10 @@ BLKID_T register_new_blk() {
     memset(blk_ids[blk_id], 0, PAGESIZE);
     printf("[*] ... registered %lld.\n", blk_id);
     return blk_id;
+}
+
+void free_blk_id(BLKID_T blk_id) {
+    munmap(blk_ids[blk_id], PAGESIZE);
 }
 
 void write_to_blk(BLKID_T idx, const void* data, size_t size) {
@@ -132,6 +187,7 @@ void read_from_blk_offset(BLKID_T idx, void* data, off_t offset, size_t size) {
     memcpy(data, (char*)blk_ids[idx] + offset, size);
 }
 
+/* node functions */
 NODEID_T get_node_id()
 {
     printf("[*] Begin get_node_id.\n");
@@ -200,14 +256,6 @@ BLKID_T get_blk_id_of_node(NODEID_T tar_nid, BLKID_T cur_blkid = 0) {
     }
     return -1;
 }
-
-// NODETYPE_T get_node_type(NODEID_T nid)
-// {
-//     assert(nid >= 0);
-//     BLKID_T blk_id = get_blk_id_of_node(nid);
-//     Node node = get_node_by_blk_id(blk_id);
-//     return node.node_type;
-// }
 
 void append_id_to_content_node(BLKID_T to_append, BLKID_T blk_id)
 {
@@ -446,6 +494,19 @@ void write_to_node(const Node& node, const char* buf, off_t offset, size_t size)
     }
 }
 
+void free_content_blk(BLKID_T content_blk) {
+    while(content_blk) {
+        ContentNode content = get_content_node_by_blk_id(content_blk);
+        for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+            BLKID_T blk_id = content.ids[i];
+            if (blk_id == 0) break;
+            else free_blk_id(blk_id);
+        }
+        free_blk_id(content_blk);
+        content_blk = content.ids[IDX_PER_PAGE - 1];
+    }
+}
+
 void realloc_node_size(Node node, size_t size) {
     printf("[+] realloc_node_size node_id=%lld, size=%lu\n", node.node_id, size);
     size_t old_size = node.st.st_size;
@@ -471,8 +532,12 @@ void realloc_node_size(Node node, size_t size) {
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
     } else {
-        // TODO
-        printf("[E] realloc error!");
+        BLKID_T content_blk = node.content;
+        for (size_t _ = 0; _ < new_content_blk_num; _++) {
+            ContentNode content = get_content_node_by_blk_id(content_blk);
+            content_blk = content.ids[IDX_PER_PAGE - 1];
+        }
+        if (content_blk) free_content_blk(content_blk);
     }
     node.st.st_size = size;
     write_to_blk(node.blk_id, &node, sizeof(Node));
@@ -508,7 +573,7 @@ void remove_node(const Node& node) {
     free_blk_id(node.blk_id);
 }
 
-/* fuse */
+/* fuse functions */
 
 static void *vtfs_init(struct fuse_conn_info *conn) {
     printf("[.] vtfs_init\n");
@@ -619,11 +684,23 @@ static int vtfs_unlink(const char *path)
     return 0;
 }
 
+static int vtfs_rmdir(const char *path)
+{
+    printf("[.] vtfs_rmdir\n");
+    Node node = get_node_by_path(path + 1);
+    if (node.node_id == -1)
+        return -ENOENT;
+    remove_node(node);
+    return 0;
+}
+
 static int vtfs_open(const char *path, struct fuse_file_info *fi)
 {
     printf("[.] vtfs_open\n");
     return 0;
 }
+
+/* main */
 
 static const struct fuse_operations op = {
         .init = vtfs_init,
@@ -635,6 +712,7 @@ static const struct fuse_operations op = {
         .truncate = vtfs_truncate,
         .read = vtfs_read,
         .unlink = vtfs_unlink,
+        .rmdir = vtfs_rmdir,
         .mkdir = vtfs_mkdir
 };
 
