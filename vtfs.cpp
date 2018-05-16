@@ -417,8 +417,6 @@ void create_node_by_path(const char* path, const struct stat* st, NODEID_T paren
 
 // BUG!
 void read_from_node(const Node& node, char* buf, off_t offset, off_t size) {
-    printf("[+] read_from_node size=%lld\n", size);
-
     BLKID_T content_blk = node.content;
     
     // calculate start point
@@ -442,9 +440,7 @@ void read_from_node(const Node& node, char* buf, off_t offset, off_t size) {
     }
     
     while(size > 0) {
-        if (size > PAGESIZE) {
-            printf("size: %lld idx_offset: %lld\n read_blk: %lld", size, idx_offset, content.ids[idx_offset]);
-    
+        if (size > PAGESIZE) {    
             read_from_blk_offset(content.ids[idx_offset], buf, 0, PAGESIZE);
             buf += PAGESIZE;
             size -= PAGESIZE;
@@ -669,7 +665,7 @@ static int vtfs_mkdir(const char *path, mode_t mode)
 
 static int vtfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    printf("[.] vtfs_read size=%lu offset= %llu\n", size, offset);
+    printf("[.] vtfs_read\n");
     Node node = get_node_by_path(path + 1);
     if (node.node_id == -1)
         return -ENOENT;
@@ -682,7 +678,7 @@ static int vtfs_read(const char *path, char *buf, size_t size, off_t offset, str
 
 static int vtfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    printf("[.] vtfs_write path=%s size=%lu offset=%lld\n", path, size, offset);
+    printf("[.] vtfs_write\n");
     Node node = get_node_by_path(path + 1);
     if (node.node_id == -1)
         return -ENOENT;
