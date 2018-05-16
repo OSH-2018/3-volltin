@@ -29,5 +29,5 @@ cat dir2/bbb
 cat dir3/ccc
 
 cd ..
-sudo umount fs
+fusermount -u fs
 rm -rf fs
