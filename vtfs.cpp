@@ -316,7 +316,6 @@ Node get_node_by_name_from_content(const char* target, ContentNode content) {
     for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
         if (content.ids[i] == 0) break;
         Node subnode = get_node_by_blk_id(content.ids[i]);
-        printf("[t] subnode.name: %s\n", subnode.name);
         if (strcmp(subnode.name, target) == 0)
             return subnode;
     }
@@ -331,7 +330,6 @@ Node get_node_by_nid_from_content(NODEID_T target_nid, const ContentNode& conten
     for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
         if (content.ids[i] == 0) break;
         Node subnode = get_node_by_blk_id(content.ids[i]);
-        printf("[t] subnode.name: %s\n", subnode.name);
         if (subnode.node_id == target_nid)
             return subnode;
     }
@@ -417,7 +415,10 @@ void create_node_by_path(const char* path, const struct stat* st, NODEID_T paren
     }
 }
 
-void read_from_node(const Node& node, char* buf, off_t offset, size_t size) {
+// BUG!
+void read_from_node(const Node& node, char* buf, off_t offset, off_t size) {
+    printf("[+] read_from_node size=%lld\n", size);
+
     BLKID_T content_blk = node.content;
     
     // calculate start point
@@ -429,30 +430,44 @@ void read_from_node(const Node& node, char* buf, off_t offset, size_t size) {
     ContentNode content = get_content_node_by_blk_id(content_blk);
     
     // read first block
-    size_t read_size = PAGESIZE - blk_offset;
+    off_t read_size = PAGESIZE - blk_offset;
     if (size < read_size) read_size = size;
     read_from_blk_offset(content.ids[idx_offset], buf, blk_offset, read_size);
     buf += read_size;
     size -= read_size;
     idx_offset += 1;
+    if (idx_offset == IDX_PER_PAGE - 1) {
+        content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+        idx_offset = 0;   
+    }
     
     while(size > 0) {
         if (size > PAGESIZE) {
+            printf("size: %lld idx_offset: %lld\n read_blk: %lld", size, idx_offset, content.ids[idx_offset]);
+    
             read_from_blk_offset(content.ids[idx_offset], buf, 0, PAGESIZE);
             buf += PAGESIZE;
             size -= PAGESIZE;
             idx_offset += 1;
-        } else {
+            if (idx_offset == IDX_PER_PAGE - 1) {
+                content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+                idx_offset = 0;
+            }
+        } else {    
             read_from_blk_offset(content.ids[idx_offset], buf, 0, size);
             buf += size;
             size -= size;
             idx_offset += 1;
+            if (idx_offset == IDX_PER_PAGE - 1) {
+                content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+                idx_offset = 0;           
+            }
         }
-    }
+    }    
 }
 
 
-void write_to_node(const Node& node, const char* buf, off_t offset, size_t size) {
+void write_to_node(const Node& node, const char* buf, off_t offset, off_t size) {
     BLKID_T content_blk = node.content;
     
     // calculate start point
@@ -460,29 +475,39 @@ void write_to_node(const Node& node, const char* buf, off_t offset, size_t size)
     off_t idx_offset = (offset - ctn_offset * SPC_PER_PAGE ) / PAGESIZE;
     off_t blk_offset = (offset - ctn_offset * SPC_PER_PAGE - idx_offset * PAGESIZE);
     while(ctn_offset--) content_blk = get_content_node_by_blk_id(content_blk).ids[IDX_PER_PAGE - 1];
-    
+
     ContentNode content = get_content_node_by_blk_id(content_blk);
     
     // read first block
-    size_t read_size = PAGESIZE - blk_offset;
+    off_t read_size = PAGESIZE - blk_offset;
     if (size < read_size) read_size = size;
 
     if (content.ids[idx_offset] == 0) content.ids[idx_offset] = register_new_blk();
     write_to_blk(content_blk, &content, sizeof(ContentNode));
 
+
     write_to_blk_offset(content.ids[idx_offset], buf, blk_offset, read_size);
     buf += read_size;
     size -= read_size;
     idx_offset += 1;
-    
+    if (idx_offset == IDX_PER_PAGE - 1) {
+        content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+        idx_offset = 0;
+    }
+
     while(size > 0) {
         if (size > PAGESIZE) {
+    
             if (content.ids[idx_offset] == 0) content.ids[idx_offset] = register_new_blk();
             write_to_blk(content_blk, &content, sizeof(ContentNode));
             write_to_blk_offset(content.ids[idx_offset], buf, 0, PAGESIZE);
             buf += PAGESIZE;
             size -= PAGESIZE;
             idx_offset += 1;
+            if (idx_offset == IDX_PER_PAGE - 1) {
+                content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+                idx_offset = 0;
+            }
         } else {
             if (content.ids[idx_offset] == 0) content.ids[idx_offset] = register_new_blk();
             write_to_blk(content_blk, &content, sizeof(ContentNode));
@@ -490,6 +515,10 @@ void write_to_node(const Node& node, const char* buf, off_t offset, size_t size)
             buf += size;
             size -= size;
             idx_offset += 1;
+            if (idx_offset == IDX_PER_PAGE - 1) {
+                content = get_content_node_by_blk_id(content.ids[IDX_PER_PAGE - 1]);
+                idx_offset = 0;                
+            }
         }
     }
 }
@@ -497,7 +526,7 @@ void write_to_node(const Node& node, const char* buf, off_t offset, size_t size)
 void free_content_blk(BLKID_T content_blk) {
     while(content_blk) {
         ContentNode content = get_content_node_by_blk_id(content_blk);
-        for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+        for (off_t i = 0; i < IDX_PER_PAGE - 1; i++) {
             BLKID_T blk_id = content.ids[i];
             if (blk_id == 0) break;
             else free_blk_id(blk_id);
@@ -509,43 +538,41 @@ void free_content_blk(BLKID_T content_blk) {
 
 void realloc_node_size(Node node, size_t size) {
     printf("[+] realloc_node_size node_id=%lld, size=%lu\n", node.node_id, size);
-    size_t old_size = node.st.st_size;
-    size_t new_size = size;
+    off_t old_size = node.st.st_size;
+    off_t new_size = size;
     
-    size_t old_content_blk_num = old_size / SPC_PER_PAGE;
-    size_t new_content_blk_num = new_size / SPC_PER_PAGE;
+    off_t old_content_blk_num = old_size / SPC_PER_PAGE + 1;
+    off_t new_content_blk_num = new_size / SPC_PER_PAGE + 1;
     if (new_size >= old_size) {
         // find last page
         BLKID_T content_blk = node.content;
-        for (size_t _ = 0; _ + 1 < old_content_blk_num; _++) {
+        for (off_t _ = 0; _ + 1 < old_content_blk_num; _++) {
             ContentNode content = get_content_node_by_blk_id(content_blk);
             content_blk = content.ids[IDX_PER_PAGE - 1];
         }
-        printf("[t] Last content blk: %lld\n", content_blk);
-        size_t new_page_num = new_content_blk_num - old_content_blk_num;
-        printf("[t] new_page_num: %lu\n", new_page_num);
+        off_t new_page_num = new_content_blk_num - old_content_blk_num;
         
-        for (size_t _ = 0; _ < new_page_num; _++) {
+        for (off_t _ = 0; _ < new_page_num; _++) {
             ContentNode content = get_content_node_by_blk_id(content_blk);
             content.ids[IDX_PER_PAGE-1] = register_new_blk();
             write_to_blk(content_blk, &content, sizeof(ContentNode));
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
     } else {
-        BLKID_T content_blk = node.content;
-        for (size_t _ = 0; _ < new_content_blk_num; _++) {
-            ContentNode content = get_content_node_by_blk_id(content_blk);
-            content_blk = content.ids[IDX_PER_PAGE - 1];
-        }
-        if (content_blk) free_content_blk(content_blk);
+        // BLKID_T content_blk = node.content;
+        // for (size_t _ = 0; _ < new_content_blk_num; _++) {
+        //     ContentNode content = get_content_node_by_blk_id(content_blk);
+        //     content_blk = content.ids[IDX_PER_PAGE - 1];
+        // }
+        // if (content_blk) free_content_blk(content_blk);
     }
     node.st.st_size = size;
     write_to_blk(node.blk_id, &node, sizeof(Node));
 }
 
-void shift_left_content(size_t idx, BLKID_T content_blk) {
+void shift_left_content(off_t idx, BLKID_T content_blk) {
     ContentNode content = get_content_node_by_blk_id(content_blk);
-    for (size_t i = idx + 1; i < IDX_PER_PAGE - 1; i++) {
+    for (off_t i = idx + 1; i < IDX_PER_PAGE - 1; i++) {
         content.ids[i-1] = content.ids[i];
     }
     BLKID_T next_content_blk = content.ids[IDX_PER_PAGE - 1];
@@ -558,7 +585,7 @@ void shift_left_content(size_t idx, BLKID_T content_blk) {
 }
 
 void remove_record_from_content(BLKID_T to_remove, BLKID_T content_blk) {
-    pair<size_t, BLKID_T> ret = get_idx_by_blk_id_from_content(to_remove, content_blk);
+    pair<off_t, BLKID_T> ret = get_idx_by_blk_id_from_content(to_remove, content_blk);
     shift_left_content(ret.first, ret.second);
 }
 
@@ -613,7 +640,7 @@ static int vtfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
         BLKID_T content_blk = node.content;
         while(content_blk) {
             ContentNode content = get_content_node_by_blk_id(content_blk);
-            for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
+            for (off_t i = 0; i < IDX_PER_PAGE - 1; i++) {
                 if (content.ids[i] == 0) break;
                 Node subnode = get_node_by_blk_id(content.ids[i]);
                 filler(buf, subnode.name, &subnode.st, 0);
@@ -642,11 +669,11 @@ static int vtfs_mkdir(const char *path, mode_t mode)
 
 static int vtfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    printf("[.] vtfs_read\n");
+    printf("[.] vtfs_read size=%lu offset= %llu\n", size, offset);
     Node node = get_node_by_path(path + 1);
     if (node.node_id == -1)
         return -ENOENT;
-    int ret = size;
+    off_t ret = size;
     if(offset + size > node.st.st_size)
         ret = node.st.st_size - offset;
     read_from_node(node, buf, offset, ret);
@@ -700,23 +727,37 @@ static int vtfs_open(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-/* main */
+/* test */
 
-static const struct fuse_operations op = {
-        init : vtfs_init,
-        getattr : vtfs_getattr,
-        readdir : vtfs_readdir,
-        mknod : vtfs_mknod,
-        open : vtfs_open,
-        write : vtfs_write,
-        truncate : vtfs_truncate,
-        read : vtfs_read,
-        unlink : vtfs_unlink,
-        rmdir : vtfs_rmdir,
-        mkdir : vtfs_mkdir
-};
+//void test()
+//{
+//    NotExistsNode.node_id = -1;
+//    create_super_node();
+//    char buf[2048];
+//    memset(&buf, 0, 1024);
+//    memset(&buf, 'a', 1024);
+//    vtfs_mknod("/testfile", 0, 0);
+//    vtfs_truncate("/testfile", 10485760);
+//    vtfs_read();
+//}
+/* main */
 
 int main(int argc, char *argv[])
 {
+//    test();
+//    return 0;
+    struct fuse_operations op;
+    memset(&op, 0, sizeof(op));
+    op.init = vtfs_init;
+    op.getattr = vtfs_getattr;
+    op.readdir = vtfs_readdir;
+    op.mknod = vtfs_mknod;
+    op.open = vtfs_open;
+    op.write = vtfs_write;
+    op.truncate = vtfs_truncate;
+    op.read = vtfs_read;
+    op.unlink = vtfs_unlink;
+    op.rmdir = vtfs_rmdir;
+    op.mkdir = vtfs_mkdir;
     return fuse_main(argc, argv, &op, NULL);
 }
