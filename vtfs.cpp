@@ -415,7 +415,6 @@ void create_node_by_path(const char* path, const struct stat* st, NODEID_T paren
     }
 }
 
-// BUG!
 void read_from_node(const Node& node, char* buf, off_t offset, off_t size) {
     BLKID_T content_blk = node.content;
     
@@ -555,12 +554,20 @@ void realloc_node_size(Node node, size_t size) {
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
     } else {
-        // BLKID_T content_blk = node.content;
-        // for (size_t _ = 0; _ < new_content_blk_num; _++) {
-        //     ContentNode content = get_content_node_by_blk_id(content_blk);
-        //     content_blk = content.ids[IDX_PER_PAGE - 1];
-        // }
-        // if (content_blk) free_content_blk(content_blk);
+        
+        BLKID_T  cur_content_blk = node.content;
+        BLKID_T next_content_blk = node.content;
+        for (size_t _ = 0; _ < new_content_blk_num; _++) {
+            cur_content_blk = next_content_blk;
+            ContentNode content = get_content_node_by_blk_id(cur_content_blk);
+            next_content_blk = content.ids[IDX_PER_PAGE - 1];
+        }
+        if (next_content_blk) {
+            ContentNode content = get_content_node_by_blk_id(cur_content_blk);
+            content.ids[IDX_PER_PAGE-1] = 0;
+            write_to_blk(cur_content_blk, &content, sizeof(ContentNode));
+            free_content_blk(next_content_blk);
+        }
     }
     node.st.st_size = size;
     write_to_blk(node.blk_id, &node, sizeof(Node));
