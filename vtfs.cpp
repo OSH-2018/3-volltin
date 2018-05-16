@@ -727,25 +727,10 @@ static int vtfs_open(const char *path, struct fuse_file_info *fi)
     return 0;
 }
 
-/* test */
-
-//void test()
-//{
-//    NotExistsNode.node_id = -1;
-//    create_super_node();
-//    char buf[2048];
-//    memset(&buf, 0, 1024);
-//    memset(&buf, 'a', 1024);
-//    vtfs_mknod("/testfile", 0, 0);
-//    vtfs_truncate("/testfile", 10485760);
-//    vtfs_read();
-//}
 /* main */
 
 int main(int argc, char *argv[])
 {
-//    test();
-//    return 0;
     struct fuse_operations op;
     memset(&op, 0, sizeof(op));
     op.init = vtfs_init;
