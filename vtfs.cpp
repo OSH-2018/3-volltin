@@ -155,11 +155,11 @@ BLKID_T get_new_blk_id() {
 }
 
 BLKID_T register_new_blk() {
-    printf("[*] Begin register_new_blk.\n");
+    //printf("[*] Begin register_new_blk.\n");
     BLKID_T blk_id = get_new_blk_id();
     blk_ids[blk_id] = mmap(NULL, PAGESIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     memset(blk_ids[blk_id], 0, PAGESIZE);
-    printf("[*] ... registered %lld.\n", blk_id);
+    //printf("[*] ... registered %lld.\n", blk_id);
     return blk_id;
 }
 
@@ -190,14 +190,14 @@ void read_from_blk_offset(BLKID_T idx, void* data, off_t offset, size_t size) {
 /* node functions */
 NODEID_T get_node_id()
 {
-    printf("[*] Begin get_node_id.\n");
+    //("[*] Begin get_node_id.\n");
     static bool used[MAX_NODE_ID];
     for (NODEID_T i = 0; i < MAX_NODE_ID; i++)
     {
         if (!used[i])
         {
             used[i] = true;
-            printf("[*] ... get %lld.\n", i);
+            //printf("[*] ... get %lld.\n", i);
             return i;
         }
     }
@@ -232,7 +232,7 @@ ContentNode get_content_node_by_blk_id(BLKID_T blk_id)
 }
 
 BLKID_T get_blk_id_of_node(NODEID_T tar_nid, BLKID_T cur_blkid = 0) {
-    printf("[+] get_blk_id_of_node tar_nid: %lld cur_blkid: %lld\n", tar_nid, cur_blkid);
+    //printf("[+] get_blk_id_of_node tar_nid: %lld cur_blkid: %lld\n", tar_nid, cur_blkid);
     Node cur_node = get_node_by_blk_id(cur_blkid);
 
     if (cur_node.node_id == tar_nid) {
@@ -283,7 +283,7 @@ void append_id_to_content_node(BLKID_T to_append, BLKID_T blk_id)
 Node get_node_by_node_id(NODEID_T nid)
 {
     if (nid == -1) {
-        printf("[E] get NotExistsNode!\n");
+        //printf("[E] get NotExistsNode!\n");
         return NotExistsNode;
     }
     return get_node_by_blk_id(get_blk_id_of_node(nid));
@@ -291,7 +291,7 @@ Node get_node_by_node_id(NODEID_T nid)
 
 NODEID_T create_node(NODETYPE_T node_type, const char* name, NODEID_T parent_nid = 0, const struct stat* st = NULL)
 {
-    printf("[*] Begin create node. (parent_nid = %lld)\n", parent_nid);
+    //printf("[*] Begin create node. (parent_nid = %lld)\n", parent_nid);
     NODEID_T nid = get_node_id();
     BLKID_T blk_id = register_new_blk();
     Node new_node;
@@ -305,14 +305,14 @@ NODEID_T create_node(NODETYPE_T node_type, const char* name, NODEID_T parent_nid
     write_to_blk(blk_id, &new_node, sizeof(Node));
     Node parent_node = get_node_by_node_id(parent_nid);
     append_id_to_content_node(blk_id, parent_node.content);
-    printf("Create: %lld\n", nid);
+    //printf("Create: %lld\n", nid);
     
     return nid;
 }
 
 /* api */
 Node get_node_by_name_from_content(const char* target, ContentNode content) {
-    printf("[+] get_node_by_name_from_content(%s, content)\n", target);
+    //printf("[+] get_node_by_name_from_content(%s, content)\n", target);
     for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
         if (content.ids[i] == 0) break;
         Node subnode = get_node_by_blk_id(content.ids[i]);
@@ -326,7 +326,7 @@ Node get_node_by_name_from_content(const char* target, ContentNode content) {
 }
 
 Node get_node_by_nid_from_content(NODEID_T target_nid, const ContentNode& content) {
-    printf("[+] get_node_by_nid_from_content(%lld, content)\n", target_nid);
+    //printf("[+] get_node_by_nid_from_content(%lld, content)\n", target_nid);
     for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
         if (content.ids[i] == 0) break;
         Node subnode = get_node_by_blk_id(content.ids[i]);
@@ -341,7 +341,7 @@ Node get_node_by_nid_from_content(NODEID_T target_nid, const ContentNode& conten
 
 pair<size_t, BLKID_T> get_idx_by_blk_id_from_content(BLKID_T target_blk_id, BLKID_T content_blk) {
     ContentNode content = get_content_node_by_blk_id(content_blk);
-    printf("[+] get_idx_by_blk_id_from_content(%lld, content)\n", target_blk_id);
+    //printf("[+] get_idx_by_blk_id_from_content(%lld, content)\n", target_blk_id);
     for (size_t i = 0; i < IDX_PER_PAGE - 1; i++) {
         if (content.ids[i] == 0) break;
         if (content.ids[i] == target_blk_id)
@@ -379,7 +379,7 @@ NODEID_T get_parent_nid(const Node& target_node, NODEID_T parent_nid = 0) {
 }
 
 Node get_node_by_path(const char* path, NODEID_T parent_nid = 0) {
-    printf("[+] get_node_by_path(\"%s\", %lld)\n", path, parent_nid);
+    //printf("[+] get_node_by_path(\"%s\", %lld)\n", path, parent_nid);
     if (strlen(path) == 0) return get_node_by_node_id(parent_nid);
     char target[FILENAME_LEN];
     memset(target, 0, sizeof(target));
@@ -398,7 +398,7 @@ Node get_node_by_path(const char* path, NODEID_T parent_nid = 0) {
 }
 
 void create_node_by_path(const char* path, const struct stat* st, NODEID_T parent_nid = 0, NODETYPE_T node_type = NODE_FILE) {
-    printf("[+] create_node_by_path path=%s parent_node=%lld\n", path, parent_nid);
+    //printf("[+] create_node_by_path path=%s parent_node=%lld\n", path, parent_nid);
     char target[FILENAME_LEN];
     const char* pos = strchr(path, '/');
     if (pos == NULL) strcpy(target, path);
@@ -532,7 +532,7 @@ void free_content_blk(BLKID_T content_blk) {
 }
 
 void realloc_node_size(Node node, size_t size) {
-    printf("[+] realloc_node_size node_id=%lld, size=%lu\n", node.node_id, size);
+    //printf("[+] realloc_node_size node_id=%lld, size=%lu\n", node.node_id, size);
     off_t old_size = node.st.st_size;
     off_t new_size = size;
     
