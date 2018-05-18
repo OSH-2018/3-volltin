@@ -556,9 +556,8 @@ void realloc_node_size(Node node, size_t size) {
             write_to_blk(content_blk, &content, sizeof(ContentNode));
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
-        node.last_content = content.ids[IDX_PER_PAGE-1];
+        node.last_content = content_blk;
     } else {
-        
         BLKID_T  cur_content_blk = node.content;
         BLKID_T next_content_blk = node.content;
         for (size_t _ = 0; _ < new_content_blk_num; _++) {
