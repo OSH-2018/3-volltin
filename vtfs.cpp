@@ -74,6 +74,7 @@ struct Node
     NODEID_T node_id; // 0 for super node
     BLKID_T blk_id;   // blk id of this node
     BLKID_T content;  // first ContentNode id
+    BLKID_T last_content; // last ContentNode id (not neccessary)
     struct stat st;
     char name[FILENAME_LEN];
     
@@ -540,19 +541,22 @@ void realloc_node_size(Node node, size_t size) {
     off_t new_content_blk_num = new_size / SPC_PER_PAGE + 1;
     if (new_size >= old_size) {
         // find last page
-        BLKID_T content_blk = node.content;
-        for (off_t _ = 0; _ + 1 < old_content_blk_num; _++) {
-            ContentNode content = get_content_node_by_blk_id(content_blk);
-            content_blk = content.ids[IDX_PER_PAGE - 1];
-        }
+        // BLKID_T content_blk = node.content;
+        // for (off_t _ = 0; _ + 1 < old_content_blk_num; _++) {
+        //     ContentNode content = get_content_node_by_blk_id(content_blk);
+        //     content_blk = content.ids[IDX_PER_PAGE - 1];
+        // }
+        BLKID_T content_blk = node.last_content;
         off_t new_page_num = new_content_blk_num - old_content_blk_num;
         
+        ContentNode content = get_content_node_by_blk_id(content_blk);
         for (off_t _ = 0; _ < new_page_num; _++) {
-            ContentNode content = get_content_node_by_blk_id(content_blk);
+            content = get_content_node_by_blk_id(content_blk);
             content.ids[IDX_PER_PAGE-1] = register_new_blk();
             write_to_blk(content_blk, &content, sizeof(ContentNode));
             content_blk = content.ids[IDX_PER_PAGE-1];
         }
+        node.last_content = content.ids[IDX_PER_PAGE-1];
     } else {
         
         BLKID_T  cur_content_blk = node.content;
@@ -568,6 +572,7 @@ void realloc_node_size(Node node, size_t size) {
             write_to_blk(cur_content_blk, &content, sizeof(ContentNode));
             free_content_blk(next_content_blk);
         }
+        node.last_content = cur_content_blk;
     }
     node.st.st_size = size;
     write_to_blk(node.blk_id, &node, sizeof(Node));
