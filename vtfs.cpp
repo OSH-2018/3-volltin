@@ -689,9 +689,7 @@ static int vtfs_write(const char *path, const char *buf, size_t size, off_t offs
     Node node = get_node_by_path(path + 1);
     if (node.node_id == -1)
         return -ENOENT;
-    if(offset + size > node.st.st_size)
-        node.st.st_size = offset + size;
-    realloc_node_size(node, node.st.st_size);
+    realloc_node_size(node, offset + size);
     write_to_node(node, buf, offset, size);
     return size;
 }
